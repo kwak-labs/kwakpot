@@ -1,0 +1,8 @@
+{
+  rpcUrl: "https://elys-testnet-rpc.polkachu.com",
+  ticketPrice: "250000", // Price at which tickets are bought, denominated in the respective token. Not very important, should be good for UX
+  devFee: 0.05, // the fee that the devs will take from the pot,
+  gameLength: 100, // The amount of blocks a game can last
+  port: 9090,
+  coin: "uelys",
+}
