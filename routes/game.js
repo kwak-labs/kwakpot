@@ -9,6 +9,7 @@ module.exports = fp(async function (app, opts) {
       endingBlock: game.endingBlock,
       entries: game.entries,
       totalPot: game.totalPot,
+      ticketPrice: game.ticketPrice,
     };
   });
 });

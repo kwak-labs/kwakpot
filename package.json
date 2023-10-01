@@ -12,6 +12,7 @@
     "@cosmjs/stargate": "^0.31.1",
     "@cosmjs/tendermint-rpc": "^0.31.1",
     "@fastify/autoload": "^5.7.1",
+    "arweave": "^1.14.4",
     "consola": "^3.2.3",
     "fastify": "^4.23.2",
     "fastify-plugin": "^4.5.1",

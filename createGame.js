@@ -9,7 +9,7 @@ let consola = require("consola");
   });
   let [firstAccount] = await wallet.getAccounts();
   const address = firstAccount.address;
-  const block = 2921258;
+  const block = 3028210;
 
   let db = lmdb.open("./db/game");
 
@@ -19,6 +19,7 @@ let consola = require("consola");
     endingBlock: block,
     entries: 0,
     totalPot: 0,
+    ticketPrice: 250000,
   });
 
   consola.info("Seed: " + wallet.mnemonic);

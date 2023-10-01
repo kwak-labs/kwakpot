@@ -2,10 +2,11 @@ const fp = require("fastify-plugin");
 
 module.exports = fp(async function (app, opts) {
   app.get("/transactions", async (req, resp) => {
-    // let game = global.databases.entries.get("entries");
+    let txs = [];
+    for (let { key, value } of await global.databases.entries.getRange({})) {
+      txs.push(value);
+    }
 
-    // return game;
-
-    return "Endpoint not finished";
+    return txs;
   });
 });

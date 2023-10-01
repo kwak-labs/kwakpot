@@ -2,12 +2,12 @@ let consola = require("consola");
 const {
   DirectSecp256k1HdWallet,
   decodeTxRaw,
-  decodePubkey,
   Registry,
 } = require("@cosmjs/proto-signing");
-const { toBech32, fromHex, fromUtf8 } = require("@cosmjs/encoding");
-const { pubkeyToAddress } = require("@cosmjs/tendermint-rpc");
-const { defaultRegistryTypes } = require("@cosmjs/stargate");
+const {
+  defaultRegistryTypes,
+  SigningStargateClient,
+} = require("@cosmjs/stargate");
 
 module.exports = async function startSyncLoop() {
   // Fetch Network data
@@ -24,18 +24,29 @@ module.exports = async function startSyncLoop() {
   // Sync Game Data
   // We do it like this cuz if many transactions are coming in to update the game
   // It may cause data loss and incorrect data
+  async function syncToGlobal() {
+    global.game.totalPot = await global.databases.game.get("CurrentGame")
+      .totalPot;
+    global.game.entries = await global.databases.game.get("CurrentGame")
+      .entries;
+  }
+
   async function syncGameData() {
+    if (global.gameEnding == true)
+      return consola.error("Cant update game data as new game is being made");
+
     await global.databases.game.put("CurrentGame", {
       totalPot: global.game.totalPot,
       entries: global.game.entries,
       address: await global.databases.game.get("CurrentGame").address,
       endingBlock: await global.databases.game.get("CurrentGame").endingBlock,
       seed: await global.databases.game.get("CurrentGame").seed,
+      ticketPrice: await global.databases.game.get("CurrentGame").ticketPrice,
     });
   }
 
   await syncNetworkInfo();
-  await syncGameData();
+  await syncToGlobal();
 
   //   Log network info
   consola.info("Chain Name/Data: " + global.networkInfo.data);
@@ -52,51 +63,195 @@ module.exports = async function startSyncLoop() {
 
   // Check if game is over
   setInterval(async () => {
-    // This function is already running
-    if (global.gameEnding == true) return;
+    try {
+      // This function is already running
+      if (global.gameEnding == true) return;
 
-    let game = await global.databases.game.get("CurrentGame");
+      let game = await global.databases.game.get("CurrentGame");
 
-    // End the game, pay everyone out, create new game
-    if (global.block >= game.endingBlock) {
-      global.gameEnding = true;
+      // End the game, pay everyone out, create new game
+      if (global.block >= game.endingBlock) {
+        global.gameEnding = true;
 
-      let allTickets = [];
-      let ticketNumber = 1;
+        let allTickets = [];
+        let ticketNumber = 1;
 
-      /*                        Winner Finder                                */
+        for (let { key, value } of global.databases.players.getRange({})) {
+          const userAddress = key;
+          const numberOfTickets = value.tickets;
 
-      for (let { key, value } of global.databases.players.getRange({})) {
-        const userAddress = key;
-        const numberOfTickets = value.tickets;
-
-        for (let i = 0; i < numberOfTickets; i++) {
-          const ticket = {
-            address: userAddress,
-            ticketNumber: ticketNumber,
-          };
-          allTickets.push(ticket);
-          ticketNumber++;
+          for (let i = 0; i < numberOfTickets; i++) {
+            const ticket = {
+              address: userAddress,
+              ticketNumber: ticketNumber,
+            };
+            allTickets.push(ticket);
+            ticketNumber++;
+          }
         }
+
+        allTickets = shuffle(allTickets);
+
+        const winningNumber = Math.floor(Math.random() * allTickets.length);
+
+        const Winner = allTickets[winningNumber];
+
+        let winningAddress = Winner.address;
+
+        /* Payment Code */
+
+        let walletBalance = await stargateClient.getAllBalances(
+          await global.databases.game.get("CurrentGame").address
+        );
+
+        const token = walletBalance.filter(
+          (obj) => obj.denom === global.config.coin
+        );
+
+        if (token.length <= 0) return consola.error("Game ended with no pool");
+
+        let amount = parseInt(token[0].amount) - 2500;
+        let amountAsset = amount / global.config.denom;
+        let amountSentToDevs = Math.floor(
+          global.config.devFee * parseInt(amountAsset) * global.config.denom
+        );
+        let amountSentToWinner = amount - amountSentToDevs;
+        const wallet = await DirectSecp256k1HdWallet.fromMnemonic(
+          await global.databases.game.get("CurrentGame").seed,
+          {
+            prefix: global.config.prefix,
+          }
+        );
+
+        const signingClient = await SigningStargateClient.connectWithSigner(
+          global.config.rpcUrl,
+          wallet
+        );
+
+        let [firstAccount] = await wallet.getAccounts();
+        let address = firstAccount.address;
+
+        const res = await signingClient.signAndBroadcast(
+          address,
+          [
+            // Send to winner message
+            {
+              typeUrl: "/cosmos.bank.v1beta1.MsgSend",
+
+              value: {
+                fromAddress: address,
+                toAddress: winningAddress,
+                amount: [
+                  {
+                    denom: global.config.coin,
+                    amount: amountSentToWinner.toString(),
+                  },
+                ],
+              },
+            },
+            {
+              typeUrl: "/cosmos.bank.v1beta1.MsgSend",
+
+              value: {
+                fromAddress: address,
+                toAddress: global.config.devWallet,
+                amount: [
+                  {
+                    denom: config.coin,
+                    amount: amountSentToDevs.toString(),
+                  },
+                ],
+              },
+            },
+          ],
+          global.config.gas,
+          "kwakpot Winner"
+        );
+
+        consola.success(res.transactionHash + ": " + "Game has been paid out!");
+
+        /* Create new Game */
+
+        // Uplade game to Arweave
+        let tx = await global.arweave.createTransaction(
+          {
+            data: JSON.stringify({
+              potAddress: await game.address,
+              totalPot: global.game.totalPot,
+              entries: global.game.entries,
+              ticketPrice: await game.ticketPrice,
+              endingHeight: await game.endingBlock,
+              winner: {
+                address: winningAddress,
+                chanceToWin:
+                  ((await global.databases.players.get(winningAddress)
+                    .tickets) /
+                    allTickets.length) *
+                  100,
+              },
+            }),
+            tags: encodeTags([
+              {
+                name: "App-Name",
+                value: "kwakpot",
+              },
+              {
+                name: "kwakpot-game",
+                value: "beta-test",
+              },
+              {
+                name: "Nonce",
+                value: Date.now().toString(),
+              },
+            ]),
+          },
+          global.jwk
+        );
+
+        await arweave.transactions.sign(tx, global.jwk);
+
+        await arweave.transactions.post(tx);
+
+        consola.success(tx.id + ": " + "Game was uploaded to Arweave!");
+
+        for (let { key, value } of await global.databases.entries.getRange()) {
+          await global.databases.entries.remove(key);
+        }
+
+        for (let { key, value } of await global.databases.players.getRange()) {
+          await global.databases.players.remove(key);
+        }
+
+        for (let { key, value } of await global.databases.game.getRange()) {
+          await global.databases.players.remove(key);
+        }
+
+        consola.success("Game data has been deleted!");
+
+        const newWallet = await DirectSecp256k1HdWallet.generate(24, {
+          prefix: global.config.prefix, // set to your chains respective prefix
+        });
+
+        let [firstWallet] = await wallet.getAccounts();
+        const newAddress = firstWallet.address;
+
+        await global.databases.game.put("CurrentGame", {
+          seed: newWallet,
+          address: newAddress,
+          endingBlock: parseInt(global.block) + global.config.gameLength,
+          entries: 0,
+          totalPot: 0,
+          ticketPrice: parseInt(global.config.ticketPrice),
+        });
+
+        global.game.entries = 0;
+        global.game.totalPot = 0;
+
+        global.gameEnding = false;
+        consola.success("New Game Was Created!");
       }
-
-      allTickets = shuffle(allTickets);
-
-      const winningNumber = Math.floor(Math.random() * allTickets.length);
-
-      const Winner = allTickets[winningNumber];
-
-      let winningAddress = Winner.address;
-      let winningTicket = Winner.ticket;
-
-      ///////////////////////////////////////////////////////////////////////////
-
-      console.log(allTickets);
-      console.log(Winner);
-
-      /* Payment Code */
-
-      /* Create new Game */
+    } catch (e) {
+      console.log(e);
     }
   }, 15000);
 
@@ -106,12 +261,12 @@ module.exports = async function startSyncLoop() {
 
     if (TXs.length <= 0) return;
 
-    // If the game has ended, dont try to index the transaction wait for a new game to be made
     if (global.gameEnding == true)
       return consola.error(
         "Cant index transaction(s) game has ended, Waiting till new game is created"
       );
 
+    // If the game has ended, dont try to index the transaction wait for a new game to be made
     TXs.forEach(async (txid) => {
       let decodedTx;
 
@@ -137,7 +292,11 @@ module.exports = async function startSyncLoop() {
       // Decode that message
       let DecodeMsgSend = registry.decode(MsgSend[0]);
 
-      // if (DecodeMsgSend.toAddress != global.pot.address) return;
+      if (
+        DecodeMsgSend.toAddress !=
+        (await global.databases.game.get("CurrentGame").address)
+      )
+        return;
 
       let { denom, amount } = DecodeMsgSend.amount[0];
 
@@ -145,7 +304,10 @@ module.exports = async function startSyncLoop() {
       if (denom != global.config.coin) return;
 
       // How many tickets they get
-      let tickets = parseInt(amount) / parseInt(global.config.ticketPrice);
+      let tickets = Math.floor(
+        parseInt(amount) /
+          (await global.databases.game.get("CurrentGame").ticketPrice)
+      );
 
       // Log the transaction
       await global.databases.entries.put(txid, {
@@ -198,4 +360,11 @@ function shuffle(array) {
   }
 
   return array;
+}
+
+function encodeTags(tags) {
+  return tags.map((tag) => ({
+    name: btoa(tag.name),
+    value: btoa(tag.value),
+  }));
 }

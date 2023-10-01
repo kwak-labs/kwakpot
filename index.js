@@ -4,10 +4,17 @@ const JSON5 = require("json5");
 const autoLoad = require("@fastify/autoload");
 const app = require("fastify")({ logger: false });
 const fs = require("fs");
+const Arweave = require("arweave");
 
 (async () => {
   global.config = JSON5.parse(fs.readFileSync("./config.json5", "utf8"));
   global.stargateClient = await StargateClient.connect(config.rpcUrl);
+  global.arweave = Arweave.init({
+    host: "ar-io.net",
+    port: 443,
+    protocol: "https",
+  });
+  global.jwk = JSON.parse(fs.readFileSync("./jwk.json", "utf8"));
   global.databases = {
     entries: lmdb.open("./db/entries"), // Just stores all the transactions and how much tickets added
     players: lmdb.open("./db/players"), // Stores each wallet, there tickets, how much depositted
@@ -15,12 +22,14 @@ const fs = require("fs");
   };
   global.txs = [];
   global.block = 0;
-
   global.game = {
     entries: 0,
     totalPot: 0,
   };
 
+  for (let { key, value } of await global.databases.entries.getRange({})) {
+    console.log(value);
+  }
   let startSyncLoop = require("./syncer.js");
 
   await startSyncLoop();
@@ -56,7 +65,7 @@ const start = async () => {
     dir: require("path").join(__dirname, "routes"),
   });
   try {
-    await app.listen({ port: config.port });
+    await app.listen({ port: global.config.port });
   } catch (err) {
     console.log(err);
     app.log.error(err);

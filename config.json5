@@ -2,7 +2,20 @@
   rpcUrl: "https://elys-testnet-rpc.polkachu.com",
   ticketPrice: "250000", // Price at which tickets are bought, denominated in the respective token. Not very important, should be good for UX
   devFee: 0.05, // the fee that the devs will take from the pot,
+  devWallet: "elys15mfxqwu8u0wzv7wmmjsymjncycewvuzpcvchsg",
   gameLength: 100, // The amount of blocks a game can last
-  port: 9090,
-  coin: "uelys",
+  port: 9090, // Port the server runs on
+  coin: "uelys", // the denom of the coin to played with
+  prefix: "elys", // the coins prefix
+  denom: 1000000, // The denomation in units
+  gas: {
+    // Gas stuff
+    amount: [
+      {
+        denom: "uelys",
+        amount: "2500",
+      },
+    ],
+    gas: "180000",
+  },
 }
