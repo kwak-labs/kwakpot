@@ -27,9 +27,6 @@ const Arweave = require("arweave");
     totalPot: 0,
   };
 
-  for (let { key, value } of await global.databases.entries.getRange({})) {
-    console.log(value);
-  }
   let startSyncLoop = require("./syncer.js");
 
   await startSyncLoop();
