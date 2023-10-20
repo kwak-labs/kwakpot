@@ -94,6 +94,12 @@ module.exports = async function startSyncLoop() {
           }
         }
 
+        if (allTickets.length <= 0) {
+          consola.error("Game ended with no pool");
+          await createGame();
+          return;
+        }
+
         allTickets = shuffle(allTickets);
 
         const winningNumber = Math.floor(Math.random() * allTickets.length);
@@ -112,10 +118,11 @@ module.exports = async function startSyncLoop() {
           (obj) => obj.denom === global.config.coin
         );
 
-        if (token[0].amount == "0")
-          return consola.error("Game ended with no pool");
-
-        if (token.length <= 0) return consola.error("Game ended with no pool");
+        if (token[0].amount == "0" || token.length <= 0) {
+          consola.error("Game ended with no pool");
+          await createGame();
+          return;
+        }
 
         let amount = parseInt(token[0].amount) - 2500;
         let amountAsset = amount / global.config.denom;
@@ -181,7 +188,7 @@ module.exports = async function startSyncLoop() {
 
         /* Create new Game */
 
-        // Uplade game to Arweave
+        // Upload game to Arweave
         let tx = await global.arweave.createTransaction(
           {
             data: JSON.stringify({
@@ -223,41 +230,52 @@ module.exports = async function startSyncLoop() {
 
         consola.success(tx.id + ": " + "Game was uploaded to Arweave!");
 
-        for (let { key, value } of await global.databases.entries.getRange()) {
-          await global.databases.entries.remove(key);
+        await createGame();
+
+        // Made this a function because sometimes dont need to pay out or upload to arweave. (In the case no one partipcated in the pot)
+        async function createGame() {
+          for (let {
+            key,
+            value,
+          } of await global.databases.entries.getRange()) {
+            await global.databases.entries.remove(key);
+          }
+
+          for (let {
+            key,
+            value,
+          } of await global.databases.players.getRange()) {
+            await global.databases.players.remove(key);
+          }
+
+          for (let { key, value } of await global.databases.game.getRange()) {
+            await global.databases.players.remove(key);
+          }
+
+          consola.success("Game data has been deleted!");
+
+          const newWallet = await DirectSecp256k1HdWallet.generate(24, {
+            prefix: global.config.prefix, // set to your chains respective prefix
+          });
+
+          let [firstWallet] = await newWallet.getAccounts();
+          const newAddress = firstWallet.address;
+
+          await global.databases.game.put("CurrentGame", {
+            seed: newWallet.mnemonic,
+            address: newAddress,
+            endingBlock: parseInt(global.block) + global.config.gameLength,
+            entries: 0,
+            totalPot: 0,
+            ticketPrice: parseInt(global.config.ticketPrice),
+          });
+
+          global.game.entries = 0;
+          global.game.totalPot = 0;
+
+          global.gameEnding = false;
+          consola.success("New Game Was Created!");
         }
-
-        for (let { key, value } of await global.databases.players.getRange()) {
-          await global.databases.players.remove(key);
-        }
-
-        for (let { key, value } of await global.databases.game.getRange()) {
-          await global.databases.players.remove(key);
-        }
-
-        consola.success("Game data has been deleted!");
-
-        const newWallet = await DirectSecp256k1HdWallet.generate(24, {
-          prefix: global.config.prefix, // set to your chains respective prefix
-        });
-
-        let [firstWallet] = await newWallet.getAccounts();
-        const newAddress = firstWallet.address;
-
-        await global.databases.game.put("CurrentGame", {
-          seed: newWallet.mnemonic,
-          address: newAddress,
-          endingBlock: parseInt(global.block) + global.config.gameLength,
-          entries: 0,
-          totalPot: 0,
-          ticketPrice: parseInt(global.config.ticketPrice),
-        });
-
-        global.game.entries = 0;
-        global.game.totalPot = 0;
-
-        global.gameEnding = false;
-        consola.success("New Game Was Created!");
       }
     } catch (e) {
       console.log(e);
