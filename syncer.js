@@ -12,13 +12,17 @@ const {
 module.exports = async function startSyncLoop() {
   // Fetch Network data
   async function syncNetworkInfo() {
-    let gatewayNetworkInfo = await fetch(config.rpcUrl + "/abci_info")
-      .catch((e) => null)
-      .then((c) => c.json());
+    try {
+      let gatewayNetworkInfo = await fetch(config.rpcUrl + "/abci_info")
+        .catch((e) => null)
+        .then((c) => c.json());
 
-    global.networkInfo =
-      gatewayNetworkInfo.result.response || global.networkInfo;
-    global.block = global.networkInfo.last_block_height;
+      global.networkInfo =
+        gatewayNetworkInfo.result.response || global.networkInfo;
+      global.block = global.networkInfo.last_block_height;
+    } catch (e) {
+      console.log(e);
+    }
   }
 
   // Sync Game Data
@@ -108,14 +112,19 @@ module.exports = async function startSyncLoop() {
           (obj) => obj.denom === global.config.coin
         );
 
+        if (token[0].amount == "0")
+          return consola.error("Game ended with no pool");
+
         if (token.length <= 0) return consola.error("Game ended with no pool");
 
         let amount = parseInt(token[0].amount) - 2500;
         let amountAsset = amount / global.config.denom;
-        let amountSentToDevs = Math.floor(
-          global.config.devFee * parseInt(amountAsset) * global.config.denom
-        );
+
+        let amountSentToDevs =
+          global.config.devFee * parseFloat(amountAsset) * global.config.denom;
+
         let amountSentToWinner = amount - amountSentToDevs;
+
         const wallet = await DirectSecp256k1HdWallet.fromMnemonic(
           await global.databases.game.get("CurrentGame").seed,
           {
@@ -232,11 +241,11 @@ module.exports = async function startSyncLoop() {
           prefix: global.config.prefix, // set to your chains respective prefix
         });
 
-        let [firstWallet] = await wallet.getAccounts();
+        let [firstWallet] = await newWallet.getAccounts();
         const newAddress = firstWallet.address;
 
         await global.databases.game.put("CurrentGame", {
-          seed: newWallet,
+          seed: newWallet.mnemonic,
           address: newAddress,
           endingBlock: parseInt(global.block) + global.config.gameLength,
           entries: 0,
@@ -288,9 +297,13 @@ module.exports = async function startSyncLoop() {
       const MsgSend = decodedTx.body.messages.filter(
         (obj) => obj.typeUrl === "/cosmos.bank.v1beta1.MsgSend"
       );
-
+      let DecodeMsgSend;
       // Decode that message
-      let DecodeMsgSend = registry.decode(MsgSend[0]);
+      try {
+        DecodeMsgSend = registry.decode(MsgSend[0]);
+      } catch (e) {
+        console.log("TX was inputted thats not part of default registry");
+      }
 
       if (
         DecodeMsgSend.toAddress !=
