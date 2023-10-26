@@ -127,8 +127,9 @@ module.exports = async function startSyncLoop() {
         let amount = parseInt(token[0].amount) - 2500;
         let amountAsset = amount / global.config.denom;
 
-        let amountSentToDevs =
-          global.config.devFee * parseFloat(amountAsset) * global.config.denom;
+        let amountSentToDevs = Math.trunc(
+          global.config.devFee * parseFloat(amountAsset) * global.config.denom
+        );
 
         let amountSentToWinner = amount - amountSentToDevs;
 
@@ -146,6 +147,9 @@ module.exports = async function startSyncLoop() {
 
         let [firstAccount] = await wallet.getAccounts();
         let address = firstAccount.address;
+
+        console.log(amountSentToWinner);
+        console.log(amountSentToDevs);
 
         const res = await signingClient.signAndBroadcast(
           address,
