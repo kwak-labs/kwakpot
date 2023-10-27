@@ -62,7 +62,7 @@ const start = async () => {
     dir: require("path").join(__dirname, "routes"),
   });
   try {
-    await app.listen({ port: global.config.port });
+    await app.listen({ port: global.config.port, host: "0.0.0.0" });
   } catch (err) {
     console.log(err);
     app.log.error(err);
