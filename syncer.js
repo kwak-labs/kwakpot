@@ -148,9 +148,6 @@ module.exports = async function startSyncLoop() {
         let [firstAccount] = await wallet.getAccounts();
         let address = firstAccount.address;
 
-        console.log(amountSentToWinner);
-        console.log(amountSentToDevs);
-
         const res = await signingClient.signAndBroadcast(
           address,
           [
