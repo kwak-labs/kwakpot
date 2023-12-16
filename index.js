@@ -2,6 +2,7 @@ const { StargateClient } = require("@cosmjs/stargate");
 const lmdb = require("lmdb");
 const JSON5 = require("json5");
 const autoLoad = require("@fastify/autoload");
+const fastifyCors = require("@fastify/cors");
 const app = require("fastify")({ logger: false });
 const fs = require("fs");
 const Arweave = require("arweave");
@@ -42,6 +43,10 @@ const start = async () => {
       return res.send();
     }
     done();
+  });
+  app.register(fastifyCors, {
+    origin: "*",
+    methods: ["GET"],
   });
   app.addContentTypeParser(
     "application/octet-stream",
