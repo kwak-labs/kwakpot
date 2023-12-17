@@ -6,6 +6,7 @@ module.exports = fp(async function (app, opts) {
 
     return {
       address: game.address,
+      gameEnding: lobal.gameEnding,
       endingBlock: game.endingBlock,
       currentBlock: global.block, // Used to see what block the server is on
       entries: game.entries,
