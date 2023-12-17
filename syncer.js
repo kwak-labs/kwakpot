@@ -68,7 +68,6 @@ module.exports = async function startSyncLoop() {
   // Check if game is over
   setInterval(async () => {
     try {
-      // This function is already running
       if (global.gameEnding == true) return;
 
       let game = await global.databases.game.get("CurrentGame");
@@ -76,6 +75,7 @@ module.exports = async function startSyncLoop() {
       // End the game, pay everyone out, create new game
       if (global.block >= game.endingBlock) {
         global.gameEnding = true;
+        await indexTxs();
 
         let allTickets = [];
         let ticketNumber = 1;
@@ -285,92 +285,12 @@ module.exports = async function startSyncLoop() {
 
   // Check global.txs fetch data and throw it into the pot
   setInterval(async () => {
-    const TXs = [...global.txs];
-
-    if (TXs.length <= 0) return;
-
     if (global.gameEnding == true)
       return consola.error(
         "Cant index transaction(s) game has ended, Waiting till new game is created"
       );
 
-    // If the game has ended, dont try to index the transaction wait for a new game to be made
-    TXs.forEach(async (txid) => {
-      let decodedTx;
-
-      if (global.databases.entries.get(txid)) {
-        return consola.error(txid + ": " + "Transaction was already indexed!");
-      }
-
-      try {
-        decodedTx = decodeTxRaw((await stargateClient.getTx(txid)).tx);
-      } catch (e) {
-        consola.error("TX couldnt be decoded");
-        return false;
-      }
-
-      // Register Default Cosmos Types
-      const registry = new Registry(defaultRegistryTypes);
-
-      // Find the message where they send coins
-      const MsgSend = decodedTx.body.messages.filter(
-        (obj) => obj.typeUrl === "/cosmos.bank.v1beta1.MsgSend"
-      );
-      let DecodeMsgSend;
-      // Decode that message
-      try {
-        DecodeMsgSend = registry.decode(MsgSend[0]);
-      } catch (e) {
-        console.log("TX was inputted thats not part of default registry");
-      }
-
-      if (
-        DecodeMsgSend.toAddress !=
-        (await global.databases.game.get("CurrentGame").address)
-      )
-        return;
-
-      let { denom, amount } = DecodeMsgSend.amount[0];
-
-      // Make sure there sending the official coin, and not an inflated one so they get more tickets
-      if (denom != global.config.coin) return;
-
-      // How many tickets they get
-      let tickets = Math.floor(
-        parseInt(amount) /
-          (await global.databases.game.get("CurrentGame").ticketPrice)
-      );
-
-      // Log the transaction
-      await global.databases.entries.put(txid, {
-        tx: txid,
-        address: DecodeMsgSend.fromAddress,
-        amount: parseInt(amount),
-        tickets: tickets,
-        block: global.block,
-      });
-
-      /* Add to player/create */
-
-      await global.databases.players.put(DecodeMsgSend.fromAddress, {
-        amount: global.databases.players.get(DecodeMsgSend.fromAddress)
-          ? global.databases.players.get(DecodeMsgSend.fromAddress).amount +
-            parseInt(amount)
-          : parseInt(amount),
-        tickets: global.databases.players.get(DecodeMsgSend.fromAddress)
-          ? global.databases.players.get(DecodeMsgSend.fromAddress).tickets +
-            tickets
-          : tickets,
-      });
-
-      /* Add To The Game  */
-      global.game.totalPot = global.game.totalPot + parseInt(amount);
-      global.game.entries = global.game.entries + 1;
-
-      consola.success(txid + ": " + "Has been indexed!");
-    });
-
-    global.txs.splice(0, TXs.length);
+    await indexTxs();
   }, 10000);
 };
 
@@ -399,4 +319,88 @@ function encodeTags(tags) {
     name: btoa(tag.name),
     value: btoa(tag.value),
   }));
+}
+
+async function indexTxs() {
+  const TXs = [...global.txs];
+
+  if (TXs.length <= 0) return;
+
+  // If the game has ended, dont try to index the transaction wait for a new game to be made
+  TXs.forEach(async (txid) => {
+    let decodedTx;
+
+    if (global.databases.entries.get(txid)) {
+      return consola.error(txid + ": " + "Transaction was already indexed!");
+    }
+
+    try {
+      decodedTx = decodeTxRaw((await stargateClient.getTx(txid)).tx);
+    } catch (e) {
+      consola.error("TX couldnt be decoded");
+      return false;
+    }
+
+    // Register Default Cosmos Types
+    const registry = new Registry(defaultRegistryTypes);
+
+    // Find the message where they send coins
+    const MsgSend = decodedTx.body.messages.filter(
+      (obj) => obj.typeUrl === "/cosmos.bank.v1beta1.MsgSend"
+    );
+    let DecodeMsgSend;
+    // Decode that message
+    try {
+      DecodeMsgSend = registry.decode(MsgSend[0]);
+    } catch (e) {
+      console.log("TX was inputted thats not part of default registry");
+    }
+
+    if (
+      DecodeMsgSend.toAddress !=
+      (await global.databases.game.get("CurrentGame").address)
+    )
+      return;
+
+    let { denom, amount } = DecodeMsgSend.amount[0];
+
+    // Make sure there sending the official coin, and not an inflated one so they get more tickets
+    if (denom != global.config.coin) return;
+
+    // How many tickets they get
+    let tickets = Math.floor(
+      parseInt(amount) /
+        (await global.databases.game.get("CurrentGame").ticketPrice)
+    );
+
+    // Log the transaction
+    await global.databases.entries.put(txid, {
+      tx: txid,
+      address: DecodeMsgSend.fromAddress,
+      amount: parseInt(amount),
+      tickets: tickets,
+      block: global.block,
+    });
+
+    /* Add to player/create */
+
+    await global.databases.players.put(DecodeMsgSend.fromAddress, {
+      amount: global.databases.players.get(DecodeMsgSend.fromAddress)
+        ? global.databases.players.get(DecodeMsgSend.fromAddress).amount +
+          parseInt(amount)
+        : parseInt(amount),
+      tickets: global.databases.players.get(DecodeMsgSend.fromAddress)
+        ? global.databases.players.get(DecodeMsgSend.fromAddress).tickets +
+          tickets
+        : tickets,
+    });
+
+    /* Add To The Game  */
+    global.game.totalPot = global.game.totalPot + parseInt(amount);
+    global.game.entries = global.game.entries + 1;
+
+    consola.success(txid + ": " + "Has been indexed!");
+  });
+
+  global.txs.splice(0, TXs.length);
 }
