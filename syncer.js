@@ -198,6 +198,7 @@ module.exports = async function startSyncLoop() {
               entries: global.game.entries,
               ticketPrice: await game.ticketPrice,
               endingHeight: await game.endingBlock,
+              date: Date.now(),
               winner: {
                 address: winningAddress,
                 chanceToWin:
