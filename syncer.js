@@ -1,4 +1,6 @@
 let consola = require("consola");
+const crypto = require("crypto");
+const seedrandom = require("seedrandom");
 const {
   DirectSecp256k1HdWallet,
   decodeTxRaw,
@@ -75,6 +77,8 @@ module.exports = async function startSyncLoop() {
       // End the game, pay everyone out, create new game
       if (global.block >= game.endingBlock) {
         global.gameEnding = true;
+        let endBlock = game.endingBlock;
+
         await indexTxs();
 
         let allTickets = [];
@@ -100,9 +104,14 @@ module.exports = async function startSyncLoop() {
           return;
         }
 
-        allTickets = shuffle(allTickets);
+        let fetchBlock = await stargateClient.getBlock(endBlock);
+        let blockHash = fetchBlock.id;
 
-        const winningNumber = Math.floor(Math.random() * allTickets.length);
+        allTickets = deterministicSortAndShuffle(allTickets, blockHash);
+
+        let numberFromHash = parseInt(blockHash, 16);
+
+        const winningNumber = (numberFromHash % allTickets.length) + 1;
 
         const Winner = allTickets[winningNumber];
 
@@ -310,6 +319,19 @@ function shuffle(array) {
       array[randomIndex],
       array[currentIndex],
     ];
+  }
+
+  return array;
+}
+
+function deterministicSortAndShuffle(array, seed) {
+  const prng = seedrandom(seed);
+  array.sort((a, b) => a.address.localeCompare(b.address));
+
+  // Fisher-Yates algorithm
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(prng() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
   }
 
   return array;
