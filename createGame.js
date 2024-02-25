@@ -9,7 +9,7 @@ let consola = require("consola");
   });
   let [firstAccount] = await wallet.getAccounts();
   const address = firstAccount.address;
-  const block = 3479983;
+  const block = 6081971;
 
   let db = lmdb.open("./db/game");
 

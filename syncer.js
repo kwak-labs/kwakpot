@@ -104,6 +104,7 @@ module.exports = async function startSyncLoop() {
           return;
         }
 
+
         let fetchBlock = await stargateClient.getBlock(endBlock);
         let blockHash = fetchBlock.id;
 
@@ -111,9 +112,15 @@ module.exports = async function startSyncLoop() {
 
         let numberFromHash = parseInt(blockHash, 16);
 
-        const winningNumber = (numberFromHash % allTickets.length) + 1;
+        let winningNumber = (numberFromHash % allTickets.length) + 1;
+
+        /* Runs if there is one ticket */
+        if(allTickets.length == 1) {
+          winningNumber = 0
+        }
 
         const Winner = allTickets[winningNumber];
+
 
         let winningAddress = Winner.address;
 
@@ -127,7 +134,7 @@ module.exports = async function startSyncLoop() {
           (obj) => obj.denom === global.config.coin
         );
 
-        if (token[0].amount == "0" || token.length <= 0) {
+        if (token[0]?.amount == "0" || token.length <= 0) {
           consola.error("Game ended with no pool");
           await createGame();
           return;
@@ -325,16 +332,19 @@ function shuffle(array) {
 }
 
 function deterministicSortAndShuffle(array, seed) {
+  // console.log(array)
   const prng = seedrandom(seed);
-  array.sort((a, b) => a.address.localeCompare(b.address));
+  let newArr = array.sort((a, b) => a.address.localeCompare(b.address));
 
   // Fisher-Yates algorithm
-  for (let i = array.length - 1; i > 0; i--) {
+  for (let i = newArr.length - 1; i > 0; i--) {
     const j = Math.floor(prng() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
+    [newArr[i], newArr[j]] = [newArr[j], newArr[i]];
   }
 
-  return array;
+  // console.log(newArr)
+
+  return newArr;
 }
 
 function encodeTags(tags) {
@@ -360,6 +370,7 @@ async function indexTxs() {
     try {
       decodedTx = decodeTxRaw((await stargateClient.getTx(txid)).tx);
     } catch (e) {
+      console.log(e)
       consola.error("TX couldnt be decoded");
       return false;
     }
